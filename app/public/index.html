@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Demo Shop</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; }
+    .row { display: flex; justify-content: space-between; align-items: center; padding: .5rem 0; border-bottom: 1px solid #ddd; }
+    input { padding: .4rem; } button { padding: .5rem 1rem; cursor: pointer; }
+    #message { margin-top: 1rem; font-weight: 600; } .error { color: #b00020; } .ok { color: #1b6e2d; }
+  </style>
+</head>
+<body>
+  <h1>Demo Shop</h1>
+  <div id="products"></div>
+  <p>
+    <label>Coupon <input id="coupon" data-testid="coupon" placeholder="SAVE10"></label>
+    <label>Email <input id="email" data-testid="email" type="email" placeholder="you@example.com"></label>
+  </p>
+  <button id="calc" data-testid="calculate">Calculate total</button>
+  <button id="checkout" data-testid="checkout">Checkout</button>
+  <div id="totals" data-testid="totals"></div>
+  <div id="message" data-testid="message"></div>
+<script>
+  const $ = (id) => document.getElementById(id);
+  let products = [];
+  fetch('/api/products').then((r) => r.json()).then((list) => {
+    products = list;
+    $('products').innerHTML = list.map((p) =>
+      `<div class="row"><span>${p.name} - $${p.price.toFixed(2)}</span>
+       <input type="number" min="0" max="10" value="0" id="qty-${p.id}" data-testid="qty-${p.id}" style="width:4rem"></div>`).join('');
+  });
+  const items = () => products.map((p) => ({ id: p.id, qty: Number($('qty-' + p.id).value) })).filter((i) => i.qty > 0);
+  const show = (text, ok) => { $('message').textContent = text; $('message').className = ok ? 'ok' : 'error'; };
+  async function call(url, body) {
+    const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    return { ok: r.ok, data: await r.json() };
+  }
+  $('calc').onclick = async () => {
+    const { ok, data } = await call('/api/cart/price', { items: items(), coupon: $('coupon').value.trim() });
+    if (!ok) { $('totals').textContent = ''; return show(data.message || data.error, false); }
+    $('totals').textContent = `Subtotal $${data.subtotal.toFixed(2)} | Discount $${data.discount.toFixed(2)} | Total $${data.total.toFixed(2)}`;
+    show('Total calculated', true);
+  };
+  $('checkout').onclick = async () => {
+    const { ok, data } = await call('/api/orders', { items: items(), coupon: $('coupon').value.trim(), email: $('email').value.trim() });
+    if (!ok) return show(data.message || data.error, false);
+    show(`Order ${data.id} created. Total $${data.total.toFixed(2)}`, true);
+  };
+</script>
+</body>
+</html>

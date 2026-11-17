@@ -1,0 +1,75 @@
+openapi: 3.0.3
+info:
+  title: Demo Shop API
+  version: 1.0.0
+paths:
+  /api/products:
+    get:
+      summary: List products
+      responses:
+        '200': { description: Product list }
+  /api/cart/price:
+    post:
+      summary: Price a cart, optionally with a coupon
+      description: |
+        Coupons: SAVE10 (10% off), WELCOME5 ($5 off) are valid.
+        BLACKFRIDAY20 is EXPIRED and MUST be rejected with 400 coupon_expired.
+        Unknown coupons MUST be rejected with 400 coupon_invalid.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  items:
+                    type: object
+                    required: [id, qty]
+                    properties:
+                      id: { type: string, example: p1 }
+                      qty: { type: integer, minimum: 1, maximum: 10 }
+                coupon: { type: string, example: SAVE10 }
+      responses:
+        '200': { description: 'subtotal, discount, total' }
+        '400': { description: 'coupon_invalid, coupon_expired, empty_cart, unknown_product, invalid_quantity' }
+  /api/orders:
+    post:
+      summary: Create an order
+      description: An order with an expired or invalid coupon MUST be rejected with 400.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items, email]
+              properties:
+                items:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      id: { type: string }
+                      qty: { type: integer }
+                coupon: { type: string }
+                email: { type: string, format: email }
+      responses:
+        '201': { description: Order created }
+        '400': { description: Validation error }
+  /api/orders/{id}:
+    get:
+      summary: Get an order
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Order }
+        '404': { description: order_not_found }
+    delete:
+      summary: Delete an order
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '204': { description: Deleted }

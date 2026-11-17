@@ -1,0 +1,98 @@
+name: build-and-release-test
+
+# Variante sin IAM: Actions construye la imagen y la publica en GHCR.
+# El despliegue en EKS se hace con ./demo/deploy.sh <sha> desde tu máquina.
+# El job release-test espera a que /version del staging devuelva el commit.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: staging
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+  pull-requests: read
+
+env:
+  SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm test
+        working-directory: app
+
+  build-image:
+    needs: unit-tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SHA }}
+      - name: Build and push to GHCR
+        run: |
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}:${SHA}"
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker build --build-arg GIT_SHA="${SHA}" -t "$IMAGE" app
+          docker push "$IMAGE"
+          echo "### Imagen publicada" >> "$GITHUB_STEP_SUMMARY"
+          echo "Despliega con: \`./demo/deploy.sh ${SHA}\`" >> "$GITHUB_STEP_SUMMARY"
+
+  wait-for-deploy:
+    needs: build-image
+    if: vars.STAGING_URL != ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait until staging runs this commit (run ./demo/deploy.sh ${{ env.SHA }})
+        run: |
+          for i in $(seq 1 90); do
+            V=$(curl -fsS "${{ vars.STAGING_URL }}/version" 2>/dev/null | sed -n 's/.*"sha":"\([0-9a-f]*\)".*/\1/p' || true)
+            echo "staging sha: ${V:-<sin respuesta>} (esperado ${SHA})"
+            [ "$V" = "$SHA" ] && exit 0
+            sleep 20
+          done
+          echo "Staging no desplegó ${SHA} en 30 min" >&2
+          exit 1
+
+  release-test:
+    needs: wait-for-deploy
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - agent-type: ui
+            requirement: >-
+              Verify the checkout flow end to end: add products, apply valid coupons (SAVE10, WELCOME5),
+              and confirm that expired (BLACKFRIDAY20) and invalid coupons are rejected with a clear error.
+          - agent-type: api
+            requirement: >-
+              Verify pricing and order creation. Expired coupon BLACKFRIDAY20 and unknown coupons must
+              return 400 on /api/cart/price and /api/orders. Valid coupons must compute the right total.
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SHA }}
+      - name: Trigger release testing (${{ matrix.agent-type }})
+        uses: aws-actions/devops-agent-qa@v1
+        with:
+          webhook-url: ${{ secrets.DEVOPS_AGENT_WEBHOOK_URL }}
+          webhook-secret: ${{ secrets.DEVOPS_AGENT_WEBHOOK_SECRET }}
+          target-url: ${{ vars.STAGING_URL }}
+          agent-type: ${{ matrix.agent-type }}
+          api-spec-file: ${{ matrix.agent-type == 'api' && './app/openapi.yaml' || '' }}
+          test-requirement: ${{ matrix.requirement }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
