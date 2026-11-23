@@ -2,7 +2,8 @@
 # Crea la EC2 del batch Java legado (D2): Java 17, CloudWatch Agent y cron cada 5 min.
 # Requiere que el repo sea PÚBLICO (la instancia descarga los archivos de raw.githubusercontent.com).
 #
-# Uso: AWS_PROFILE=aidlc-workshop ./infra/batch/launch-batch-ec2.sh
+# Uso: AWS_PROFILE=aidlc-workshop INSTANCE_PROFILE=AmazonEC2RoleDevopsAgent \
+#        SUBNET_ID=<subred privada> ./infra/batch/launch-batch-ec2.sh
 set -euo pipefail
 
 REGION="${AWS_REGION:-us-east-1}"
@@ -19,7 +20,8 @@ curl -fsS -o /dev/null "${RAW_BASE}/src/LegacyBatchJob.java" || {
 }
 
 VPC_ID="$(aws ec2 describe-vpcs --region "$REGION" --filters Name=isDefault,Values=true --query 'Vpcs[0].VpcId' --output text)"
-SUBNET_ID="$(aws ec2 describe-subnets --region "$REGION" --filters Name=vpc-id,Values="$VPC_ID" Name=default-for-az,Values=true --query 'Subnets[0].SubnetId' --output text)"
+# Subred privada con salida por NAT (ver create-nat-network.sh). La cuenta bloquea el IGW (VPC BPA).
+SUBNET_ID="${SUBNET_ID:?Define SUBNET_ID=<subred privada>, la imprime ./infra/batch/create-nat-network.sh}"
 AMI_ID="$(aws ssm get-parameter --region "$REGION" --name /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64 --query Parameter.Value --output text)"
 
 echo ">> Security group sin reglas de entrada"
@@ -40,7 +42,8 @@ for f in src/LegacyBatchJob.java config/batch.properties data/orders.csv bin/run
 done
 chmod +x /opt/batch/bin/run-job.sh
 javac -d /opt/batch/classes /opt/batch/src/LegacyBatchJob.java
-/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c file:/opt/batch/cloudwatch-agent.json
+# append-config: se suma a la configuración que aplique Quick Setup/State Manager en vez de reemplazarla
+/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a append-config -m ec2 -s -c file:/opt/batch/cloudwatch-agent.json
 echo "RAW_BASE=${RAW_BASE}" > /etc/batch.env
 echo "*/5 * * * * root . /etc/batch.env && export RAW_BASE && /opt/batch/bin/run-job.sh" > /etc/cron.d/legacy-batch
 systemctl enable --now crond
@@ -49,7 +52,7 @@ EOF
 echo ">> Lanzando instancia ${INSTANCE_TYPE} con el perfil ${INSTANCE_PROFILE}"
 INSTANCE_ID="$(aws ec2 run-instances --region "$REGION" \
   --image-id "$AMI_ID" --instance-type "$INSTANCE_TYPE" \
-  --subnet-id "$SUBNET_ID" --security-group-ids "$SG_ID" --associate-public-ip-address \
+  --subnet-id "$SUBNET_ID" --security-group-ids "$SG_ID" --no-associate-public-ip-address \
   --iam-instance-profile Name="$INSTANCE_PROFILE" \
   --metadata-options HttpTokens=required,HttpEndpoint=enabled \
   --user-data "file://${USER_DATA}" \
