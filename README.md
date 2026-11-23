@@ -1,4 +1,4 @@
-# Demo: AWS DevOps Agent, release testing sobre EKS
+# Demo: AWS DevOps Agent (troubleshooting, batch legado y release testing)
 
 App de ejemplo ("Demo Shop", Node sin dependencias) desplegada en EKS con un endpoint público. Un PR con una regresión sutil pasa los tests unitarios, pero el release testing de DevOps Agent la detecta.
 
@@ -22,7 +22,9 @@ PR ─► GitHub Actions ─► unit tests ─► build ─► GHCR
 | `infra/` | Opcional. `eksctl` y OIDC de GitHub, solo si tienes permisos de IAM (no se usan en esta variante) |
 | `demo/deploy.sh` | Despliega en EKS la imagen de GHCR de un commit |
 | `.github/workflows/deploy-and-test.yml` | Tests → build a GHCR → espera el despliegue → release testing (UI y API) |
-| `demo/plant-regression.sh` | Crea la rama con la regresión y la sube |
+| `demo/plant-regression.sh` | D3: rama con la regresión del cupón |
+| `batch/`, `infra/batch/` | D2: job Java, config, CloudWatch Agent, EC2 y alarma |
+| `demo/plant-runtime-bug.sh` | D1: rama con el bug de ejecución |
 | `demo/break-deployment.sh` | Opcional: rompe el deployment para la investigación |
 
 ## Preparación
@@ -52,7 +54,42 @@ Imprime la URL pública. Guárdala como **variable** de GitHub (no secret) llama
 
 **6. Ensayo completo** de la sección siguiente.
 
-## Guion (~30 min)
+## Alcance de la sesión con el cliente (~60 min)
+
+| Demo | Qué muestra | Escenario | Scripts |
+|---|---|---|---|
+| **D1** (15 min) | Troubleshooting de errores en código | Un commit introduce un `TypeError` en el checkout (HTTP 500) en EKS | `demo/plant-runtime-bug.sh`, `demo/deploy.sh` |
+| **D2** (15 min) | Batch Java legado en EC2 y su configuración | Un commit de configuración apunta a una ruta inexistente y el job falla | `infra/batch/*`, `demo/break-batch-config.sh` |
+| **D3** (15 min) | Release testing de una API | Regresión del cupón expirado (guion de abajo) | `demo/plant-regression.sh` |
+
+**Fuera de alcance:** pruebas de desempeño y de seguridad. El release testing no mide carga ni es un escáner de vulnerabilidades (para eso existen Distributed Load Testing y AWS Security Agent). El agente investiga con la información de la cuenta, no entra por SSH a la EC2.
+
+### D1: troubleshooting de errores en código
+```bash
+./demo/plant-runtime-bug.sh                    # rama feature/order-label
+./demo/deploy.sh <sha>                         # tras el build en Actions
+curl -XPOST $URL/api/orders -H 'content-type: application/json' \
+  -d '{"items":[{"id":"p1","qty":1}],"email":"a@b.co"}'      # 500
+```
+En el chat del agente: `Investigate why POST /api/orders returns 500 in namespace shop`. Esperado: el agente lee el log del pod (`TypeError ... reading 'label'`), localiza `server.js` y el commit "add fulfilment label", y propone rollback o validar `items[0].meta`. Restaurar: `kubectl -n shop rollout undo deployment/shop`.
+
+### D2: batch Java legado en EC2
+Requisitos: el repo debe ser **público** (la instancia descarga archivos de raw.githubusercontent.com) y el rol de la instancia necesita permisos de CloudWatch Logs (`CloudWatchAgentServerPolicy` o equivalente).
+```bash
+export AWS_PROFILE=aidlc-workshop
+./infra/batch/create-alarm.sh                  # log group /demo/legacy-batch + alarma
+./infra/batch/launch-batch-ec2.sh              # EC2 t3.micro, Java 17, cron cada 5 min
+```
+Línea base: el log muestra `Job finished OK: 5 records, total=625.64`. Para romperlo:
+```bash
+./demo/break-batch-config.sh                   # commit: input.file=/opt/batch/inbound/orders.csv
+```
+En el siguiente run aparece `FileNotFoundException` en el log group. En el chat del agente: `Investigate why the job in log group /demo/legacy-batch is failing`. Esperado: el agente lee el stack trace, ve la ruta, la compara con `batch/config/batch.properties` y el commit que la cambió. Restaurar: `./demo/break-batch-config.sh restore`. Limpieza: terminar la instancia.
+
+### D3: release testing de una API
+Es el guion de la sección siguiente (regresión del cupón expirado, sobre la API de la tienda y su `openapi.yaml`).
+
+## Guion D3 (~30 min con el flujo completo)
 
 ### A. Línea base (3 min)
 Muestra la app en la URL pública. Prueba `SAVE10`. Prueba `BLACKFRIDAY20` y comprueba que da error "Coupon has expired". Abre el check de release testing en verde del commit a `main`.

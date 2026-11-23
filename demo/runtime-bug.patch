@@ -1,0 +1,12 @@
+--- a/app/server.js
++++ b/app/server.js
+@@ -54,7 +54,8 @@
+       throw new ValidationError('invalid_email', 'A valid email is required');
+     }
+     const totals = price(items, coupon);
+-    const order = { id: crypto.randomUUID(), email, items, coupon: coupon || null, ...totals, status: 'CREATED' };
++    const label = items[0].meta.label.toUpperCase(); // etiqueta para fulfilment
++    const order = { id: crypto.randomUUID(), email, items, coupon: coupon || null, ...totals, label, status: 'CREATED' };
+     if (orders.size >= 100) orders.delete(orders.keys().next().value);
+     orders.set(order.id, order);
+     return send(res, 201, order);

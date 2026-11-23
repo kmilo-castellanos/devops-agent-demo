@@ -7,8 +7,10 @@ name: build-and-release-test
 on:
   push:
     branches: [main]
+    paths: ['app/**', 'k8s/**', '.github/workflows/**']
   pull_request:
     branches: [main]
+    paths: ['app/**', 'k8s/**', '.github/workflows/**']
   workflow_dispatch:
 
 concurrency:
