@@ -10,7 +10,7 @@ REGION="${AWS_REGION:-us-east-1}"
 GH_REPO="${GH_REPO:-kmilo-castellanos/devops-agent-demo}"
 BRANCH="${BRANCH:-main}"
 INSTANCE_PROFILE="${INSTANCE_PROFILE:-AmazonEC2RoleForLaunchWizard}"   # perfil de instancia con el rol indicado
-INSTANCE_TYPE="${INSTANCE_TYPE:-t3.micro}"
+INSTANCE_TYPE="${INSTANCE_TYPE:-t3.small}"  # t3.micro se queda sin memoria con el parcheo automático de la cuenta
 RAW_BASE="https://raw.githubusercontent.com/${GH_REPO}/${BRANCH}/batch"
 
 echo ">> Comprobando que el repo es accesible públicamente"
@@ -35,7 +35,12 @@ USER_DATA="$(mktemp)"
 cat > "$USER_DATA" <<EOF
 #!/bin/bash
 set -x
-dnf install -y java-17-amazon-corretto-devel amazon-cloudwatch-agent cronie
+# Reintenta: el parcheo automático de la cuenta (SSM) puede tener dnf ocupado al arrancar
+for i in \$(seq 1 10); do
+  dnf install -y java-17-amazon-corretto-devel amazon-cloudwatch-agent cronie && break
+  echo "dnf ocupado, reintento \$i"; sleep 30
+done
+rpm -q cronie java-17-amazon-corretto-devel amazon-cloudwatch-agent || exit 1
 mkdir -p /opt/batch/{src,config,data,bin,classes,out} /var/log/batch
 for f in src/LegacyBatchJob.java config/batch.properties data/orders.csv bin/run-job.sh cloudwatch-agent.json; do
   curl -fsS "${RAW_BASE}/\$f" -o "/opt/batch/\$f"
@@ -45,6 +50,7 @@ javac -d /opt/batch/classes /opt/batch/src/LegacyBatchJob.java
 # append-config: se suma a la configuración que aplique Quick Setup/State Manager en vez de reemplazarla
 /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a append-config -m ec2 -s -c file:/opt/batch/cloudwatch-agent.json
 echo "RAW_BASE=${RAW_BASE}" > /etc/batch.env
+mkdir -p /etc/cron.d
 echo "*/5 * * * * root . /etc/batch.env && export RAW_BASE && /opt/batch/bin/run-job.sh" > /etc/cron.d/legacy-batch
 systemctl enable --now crond
 EOF
