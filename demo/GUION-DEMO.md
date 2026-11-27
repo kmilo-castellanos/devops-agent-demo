@@ -58,20 +58,20 @@ Los tres dolores que mencionó el cliente, y la demo que responde a cada uno:
 
 ### Qué hacer
 1. Mostrar en CloudWatch el log group `/demo/legacy-batch` con el `FileNotFoundException`, y la alarma `legacy-batch-job-failed` en ALARM.
-2. Abrir la investigación: **"Batch job en /demo/legacy-batch fallando en instancia i-059781bcae870eedd"**.
+2. Abrir la investigación: **"Job batch Java legado (LegacyBatchJob) falla en cada ejecución en EC2"**. Se lanzó describiendo solo el síntoma, sin mencionar ningún commit.
 
-### Qué encontró el agente (resultado real)
-- **Síntoma:** el job falla en **todas** las ejecuciones desde hace ~4 días, y **la alarma no tenía ninguna acción configurada**. "Nadie se enteró en 4 días."
-- **Causa:** la ruta de entrada cambió de `/opt/batch/data` a `/opt/batch/inbound`, y esa carpeta nunca se crea en el servidor. Lo comprobó comparando la última ejecución buena con las fallidas, y leyendo el *user data* de la instancia.
-- **Origen:** dedujo que el servidor descarga la configuración desde la rama `main` de GitHub, y apuntó al cambio en `batch.properties`.
-- **Transparencia:** dejó escrito lo que **no** verificó. No entró al servidor a leer el archivo, para no modificarlo.
-- **Plan:** revertir el commit de configuración (opción permanente), o fijar el servidor a la última versión buena (opción rápida).
-- **Tiempo:** 5,2 minutos.
+### Qué encontró el agente (resultado real, 5,6 min)
+- **Síntoma con números:** 1147 ejecuciones fallidas desde el 23/11 a las 15:45 UTC, y ninguna buena desde entonces. Antes, cada ejecución procesaba 5 registros.
+- **Causa raíz, confirmada en GitHub:** un commit en `main` cambió `input.file` en `batch/config/batch.properties` de `/opt/batch/data/orders.csv` a `/opt/batch/inbound/orders.csv`. Esa carpeta no existe en el servidor. **El código no cambió, solo la configuración.**
+- **Prueba de la correlación:** las 22 ejecuciones con la ruta vieja terminaron bien. Las 1147 con la ruta nueva fallaron. El cambio coincide al minuto con el primer fallo.
+- **Por qué pasó (causas que lo permitieron):**
+  - El script `run-job.sh` aplica en vivo la configuración de `main`, sin validarla.
+  - El CI del repositorio **no se ejecuta** con cambios en `batch/`, así que el commit no pasó ninguna validación.
+  - La alarma **no tiene acciones**: lleva 4 días en ALARM sin avisar a nadie.
+- **Plan de mitigación:** restaurar el valor bueno en `main` (el siguiente cron lo toma solo), con pasos para encontrar el commit y al autor, y una alternativa temporal si la ruta nueva era intencional. Validado contra políticas de despliegue seguro.
 
 ### El beneficio, dicho fácil
-> "En sistemas legados el problema casi nunca es el código: es una configuración, una ruta, una credencial. El agente conecta el error del log con el cambio de configuración, aunque el job no tenga monitoreo moderno. Solo necesitó los logs en CloudWatch."
-
-**Nota para quien presenta:** esta investigación se ejecutó 5 minutos después de registrar GitHub, probablemente antes de que el repositorio estuviera asociado e indexado. Por eso el origen quedó como *hipótesis*. Si la relanzas antes de la sesión, debería confirmar el commit exacto ("config(batch): move input to inbound directory").
+> "Nadie tocó el código, y aun así el job llevaba 4 días caído sin que nadie se enterara. El agente encontró el cambio de configuración en GitHub, lo probó con los datos (22 ejecuciones buenas antes, 1147 malas después) y además señaló los tres huecos del proceso que lo permitieron: config sin validar, CI que no cubre el batch y una alarma que no avisa. Eso es lo que evita que vuelva a pasar."
 
 ---
 
@@ -128,7 +128,7 @@ Lo que el cliente ya vio sin darse cuenta:
 
 ## Cierre (3 min)
 
-> "Vieron tres cosas: un error de código que el agente llevó hasta la línea y el commit; un batch legado que llevaba 4 días fallando sin que nadie se enterara; y un cambio que pasaba todos los tests y que el agente detuvo antes de producción. Todo en español, con evidencia, y sin instalar nada en sus servidores."
+> "Vieron tres cosas: un error de código que el agente llevó hasta la línea y el commit; un batch legado que llevaba 4 días y 1147 ejecuciones fallando sin que nadie se enterara; y un cambio que pasaba todos los tests y que el agente detuvo antes de producción. Todo en español, con evidencia, y sin instalar nada en sus servidores."
 
 **Siguiente paso propuesto:** elegir **un caso real** (un job batch o una app que les dé problemas), conectarlo a un Agent Space en una cuenta de pruebas, y medir el tiempo de diagnóstico antes y después. Pedir el contacto técnico que lo implementaría.
 
@@ -148,7 +148,6 @@ Lo que el cliente ya vio sin darse cuenta:
 ---
 
 ## Checklist antes de la sesión
-- [ ] Relanzar la investigación de D2, ya con GitHub conectado, para que confirme el commit.
 - [ ] Revisar en la web app que las investigaciones y los release tests se ven bien (capturas de respaldo).
 - [ ] Decidir qué estado dejar desplegado. Para empezar D1 en vivo: `./demo/deploy.sh cd491e91fedada7fa47f8b0bf584b9df6b8f1b79`.
 - [ ] Verificar el login de SSO (`aws sso login --profile aidlc-workshop`).
