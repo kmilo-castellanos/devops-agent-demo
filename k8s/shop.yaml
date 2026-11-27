@@ -17,6 +17,8 @@ spec:
     metadata:
       labels: { app: shop }
     spec:
+      nodeSelector:
+        eks.amazonaws.com/nodeclass: demo-private   # nodos con salida por NAT
       containers:
         - name: shop
           image: IMAGE_PLACEHOLDER
@@ -45,7 +47,7 @@ metadata:
   name: shop
   namespace: shop
   annotations:
-    service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing
+    service.beta.kubernetes.io/aws-load-balancer-scheme: internal   # VPC BPA bloquea la entrada por internet
     service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: ip
 spec:
   type: LoadBalancer
