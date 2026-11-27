@@ -48,7 +48,10 @@ metadata:
   name: shop
   namespace: shop
   annotations:
-    service.beta.kubernetes.io/aws-load-balancer-scheme: internal   # VPC BPA bloquea la entrada por internet
+    # Público solo en una subred dedicada con exclusión de VPC BPA (vpcbpa-exclude-0309a217bcd1a8b5f).
+    # Los pods siguen en la subred privada. Al terminar la demo: borrar la exclusión y volver a "internal".
+    service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing
+    service.beta.kubernetes.io/aws-load-balancer-subnets: subnet-0e2d313c85d089e44
     service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: ip
 spec:
   type: LoadBalancer

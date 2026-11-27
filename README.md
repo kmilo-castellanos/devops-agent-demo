@@ -133,9 +133,30 @@ Haz merge del fix o cierra el PR. Para que `main` vuelva a verde, el siguiente p
 - **Nombre de la action.** Es `aws-actions/devops-agent-qa@v1` (el repo `devops-agent-release-testing` no existe). La documentación de AWS se contradice en este punto.
 - **NLB en el Service.** Usa `loadBalancerClass: eks.amazonaws.com/nlb`, válido para clusters con EKS Auto Mode (como `cluster-test`). En un cluster sin Auto Mode hay que instalar el AWS Load Balancer Controller.
 
+## Red en esta cuenta (VPC Block Public Access)
+
+La cuenta tiene VPC BPA en modo `block-ingress`: el tráfico por el internet gateway está bloqueado. Para la demo se crearon:
+
+| Recurso | ID | Para qué |
+|---|---|---|
+| Subred privada | `subnet-005543b8343e8cc2b` (172.31.112.0/20) | EC2 del batch y nodos de EKS (`k8s/private-nodes.yaml`) |
+| NAT gateway | `nat-00cf441afc086ac00` | Salida a internet de la subred privada |
+| Tabla de rutas | `rtb-08dc9e3c9a488a39b` | 0.0.0.0/0 hacia el NAT |
+| Subred pública del NLB | `subnet-0e2d313c85d089e44` (172.31.128.0/20) | Solo el NLB de la tienda |
+| Exclusión de VPC BPA | `vpcbpa-exclude-0309a217bcd1a8b5f` | Permite entrada desde internet solo en la subred del NLB |
+
+Mientras exista la exclusión, la tienda es pública y sin autenticación.
+
 ## Limpieza
 
 ```bash
-kubectl delete ns shop   # elimina el NLB y la app; el cluster no es de esta demo, no se borra
+export AWS_PROFILE=aidlc-workshop AWS_REGION=us-east-1
+kubectl delete ns shop                                   # elimina el NLB y la app
+kubectl delete -f k8s/private-nodes.yaml                 # elimina el NodePool (Auto Mode borra el nodo)
+aws ec2 delete-vpc-block-public-access-exclusion --exclusion-id vpcbpa-exclude-0309a217bcd1a8b5f
+aws ec2 delete-subnet --subnet-id subnet-0e2d313c85d089e44   # cuando el NLB ya no exista
+aws ec2 terminate-instances --instance-ids i-059781bcae870eedd
+aws ec2 delete-nat-gateway --nat-gateway-id nat-00cf441afc086ac00
+# después: liberar la Elastic IP del NAT, borrar rtb-08dc9e3c9a488a39b y subnet-005543b8343e8cc2b
 ```
-Elimina también el Agent Space, el webhook y, si quieres, el paquete de GHCR.
+El cluster `cluster-test` no es de esta demo y no se borra. Elimina también el webhook del Agent Space y, si quieres, el paquete de GHCR.
