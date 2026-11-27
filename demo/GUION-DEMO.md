@@ -71,7 +71,7 @@ Los tres dolores que mencionó el cliente, y la demo que responde a cada uno:
 ### El beneficio, dicho fácil
 > "En sistemas legados el problema casi nunca es el código: es una configuración, una ruta, una credencial. El agente conecta el error del log con el cambio de configuración, aunque el job no tenga monitoreo moderno. Solo necesitó los logs en CloudWatch."
 
-**Nota para quien presenta:** esta investigación se ejecutó antes de conectar GitHub, por eso el origen quedó como *hipótesis*. Si la relanzas antes de la sesión, debería confirmar el commit exacto ("config(batch): move input to inbound directory").
+**Nota para quien presenta:** esta investigación se ejecutó 5 minutos después de registrar GitHub, probablemente antes de que el repositorio estuviera asociado e indexado. Por eso el origen quedó como *hipótesis*. Si la relanzas antes de la sesión, debería confirmar el commit exacto ("config(batch): move input to inbound directory").
 
 ---
 
