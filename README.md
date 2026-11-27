@@ -144,6 +144,8 @@ La cuenta tiene VPC BPA en modo `block-ingress`: el tráfico por el internet gat
 | Tabla de rutas | `rtb-08dc9e3c9a488a39b` | 0.0.0.0/0 hacia el NAT |
 | Subred pública del NLB | `subnet-0e2d313c85d089e44` (172.31.128.0/20) | Solo el NLB de la tienda |
 | Exclusión de VPC BPA | `vpcbpa-exclude-0309a217bcd1a8b5f` | Permite entrada desde internet solo en la subred del NLB |
+| CloudFront | `E1ALFMCU14SIGB` (`https://db5sckf3s0fwg.cloudfront.net`) | HTTPS delante del NLB, sin caché. El release testing exige HTTPS. Es el valor de `STAGING_URL` |
+| Webhook de `Demo-Agent` | asociación `eventChannel` `3b3d5df9-ca0e-4f93-8386-a08e39d35cfd` | Lo usa la GitHub Action. URL y secret están en los GitHub Secrets |
 
 Mientras exista la exclusión, la tienda es pública y sin autenticación.
 
@@ -151,6 +153,7 @@ Mientras exista la exclusión, la tienda es pública y sin autenticación.
 
 ```bash
 export AWS_PROFILE=aidlc-workshop AWS_REGION=us-east-1
+aws cloudfront get-distribution-config --id E1ALFMCU14SIGB   # deshabilitarla (Enabled=false) y luego delete-distribution
 kubectl delete ns shop                                   # elimina el NLB y la app
 kubectl delete -f k8s/private-nodes.yaml                 # elimina el NodePool (Auto Mode borra el nodo)
 aws ec2 delete-vpc-block-public-access-exclusion --exclusion-id vpcbpa-exclude-0309a217bcd1a8b5f
