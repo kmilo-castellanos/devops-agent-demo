@@ -38,6 +38,7 @@ spec:
           securityContext:
             allowPrivilegeEscalation: false
             runAsNonRoot: true
+            runAsUser: 1000 # usuario "node" de node:22-alpine; debe ser numérico para runAsNonRoot
             readOnlyRootFilesystem: true
             capabilities: { drop: ["ALL"] }
 ---
